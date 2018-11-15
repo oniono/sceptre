@@ -6,7 +6,6 @@ This module implements a SceptrePlanExecutor, which is responsible for
 executing the command specified in a SceptrePlan.
 """
 import logging
-import traceback
 import threading
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -16,19 +15,7 @@ from sceptre.stack_status import StackStatus
 
 class SceptrePlanExecutor(object):
 
-    def __init__(self):
-        pass
-
-    def execute(self, plan, *args):
-        exec_env = ExecutionEnvironment(plan)
-        exec_env.execute(*args)
-
-
-class ExecutionEnvironment(object):
-
-    def __init__(self, plan, *args):
-        import ipdb
-        ipdb.set_trace()
+    def __init__(self, plan):
         self.logger = logging.getLogger(__name__)
         self.plan = plan
         self.num_threads = len(self.plan.launch_order)
