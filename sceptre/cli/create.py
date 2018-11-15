@@ -38,5 +38,5 @@ def create_command(ctx, path, change_set_name, yes):
         plan.create_change_set(change_set_name)
     else:
         confirmation(action, yes, command_path=path)
-        statuses = [response[1] for response in plan.create()]
-        exit(stack_status_exit_code(statuses))
+        responses = plan.create()
+        exit(stack_status_exit_code(responses.values()))

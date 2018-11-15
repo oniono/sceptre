@@ -66,5 +66,5 @@ def update_command(ctx, path, change_set, verbose, yes):
             plan.delete_change_set(change_set_name)
     else:
         confirmation("update", yes, command_path=path)
-        statuses = [response[1] for response in plan.update()]
-        exit(stack_status_exit_code(statuses))
+        responses = plan.update()
+        exit(stack_status_exit_code(responses.values()))

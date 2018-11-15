@@ -34,8 +34,8 @@ def list_resources(ctx, path):
         output_format=ctx.obj.get("output_format")
     )
     plan = SceptrePlan(context)
-    responses = [response[1] for response in plan.describe_resources()]
-    write(responses, context.output_format)
+    responses = plan.describe_resources()
+    write(list(responses.values()), context.output_format)
 
 
 @list_group.command(name="outputs")
@@ -60,17 +60,17 @@ def list_outputs(ctx, path, export):
     )
 
     plan = SceptrePlan(context)
-    responses = [response[1] for response in plan.describe_outputs()]
+    responses = plan.describe_outputs()
 
     if export == "envvar":
         write("\n".join(
             "export SCEPTRE_{0}={1}".format(
                 output["OutputKey"], output["OutputValue"]
             )
-            for response in responses for output in response
+            for response in responses.values() for output in response
         ))
     else:
-        write(responses, context.output_format)
+        write(list(responses.values()), context.output_format)
 
 
 @list_group.command(name="change-sets")
@@ -91,9 +91,9 @@ def list_change_sets(ctx, path):
     )
 
     plan = SceptrePlan(context)
-    responses = [response[1] for response in plan.list_change_sets()]
+    responses = plan.list_change_sets()
 
-    for response in responses:
+    for response in responses.values():
         if response['ResponseMetadata']['HTTPStatusCode'] == 200:
             del response['ResponseMetadata']
         write(response, context.output_format)

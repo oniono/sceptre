@@ -28,9 +28,9 @@ def validate_command(ctx, path):
     )
 
     plan = SceptrePlan(context)
-    responses = [response[1] for response in plan.validate()]
+    responses = plan.validate()
 
-    for response in responses:
+    for response in responses.values():
         if response['ResponseMetadata']['HTTPStatusCode'] == 200:
             del response['ResponseMetadata']
             click.echo("Template is valid. Template details:\n")
@@ -55,8 +55,8 @@ def generate_command(ctx, path):
     )
 
     plan = SceptrePlan(context)
-    responses = [response[1] for response in plan.generate()]
-    write(responses)
+    responses = plan.generate()
+    write(responses.values())
 
 
 @click.command(name="estimate-cost")
@@ -79,9 +79,9 @@ def estimate_cost_command(ctx, path):
     )
 
     plan = SceptrePlan(context)
-    responses = [response[1] for response in plan.estimate_cost()]
+    responses = plan.estimate_cost()
 
-    for response in responses:
+    for response in responses.values():
         if response['ResponseMetadata']['HTTPStatusCode'] == 200:
             del response['ResponseMetadata']
             click.echo("View the estimated cost at:")

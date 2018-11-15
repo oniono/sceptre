@@ -3,7 +3,7 @@ import click
 from sceptre.context import SceptreContext
 from sceptre.cli.helpers import (
      catch_exceptions,
-     write_responses
+     write
     )
 from sceptre.plan.plan import SceptrePlan
 
@@ -30,4 +30,6 @@ def status_command(ctx, path):
 
     plan = SceptrePlan(context)
     responses = plan.get_status()
-    write_responses(responses, no_colour=context.no_colour)
+    message = "\n".join("{}: {}".format(stack.name, status)
+                        for stack, status in responses.items())
+    write(message, no_colour=context.no_colour)

@@ -24,7 +24,7 @@ class SceptrePlanExecutor(object):
                                for batch in launch_order for stack in batch}
 
     def execute(self, *args):
-        responses = []
+        responses = {}
 
         with ThreadPoolExecutor(max_workers=self.num_threads) as executor:
             for batch in self.launch_order:
@@ -34,7 +34,7 @@ class SceptrePlanExecutor(object):
                 failed = False
                 for future in as_completed(futures):
                     stack, status = future.result()
-                    responses.append((stack, status))
+                    responses[stack] = status
 
                     if status == StackStatus.FAILED:
                         failed = True

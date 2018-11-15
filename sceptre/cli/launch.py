@@ -30,5 +30,5 @@ def launch_command(ctx, path, yes):
     plan = SceptrePlan(context)
 
     confirmation(plan.launch.__name__, yes, command_path=path)
-    statuses = [response[1] for response in plan.launch()]
-    exit(stack_status_exit_code(statuses))
+    responses = plan.launch()
+    exit(stack_status_exit_code(responses.values()))

@@ -88,12 +88,6 @@ def write(var, output_format="str", no_colour=True):
     click.echo(stream)
 
 
-def write_responses(responses, no_colour=True):
-    message = "\n".join("{}: {}".format(stack.name, status)
-                        for stack, status in responses)
-    write(message, no_colour=no_colour)
-
-
 def stack_status_exit_code(statuses):
     if not all(
             status == StackStatus.COMPLETE

@@ -40,5 +40,5 @@ def delete_command(ctx, path, change_set_name, yes):
     if change_set_name:
         plan.delete_change_set(change_set_name)
     else:
-        statuses = [response[1] for response in plan.delete()]
-        exit(stack_status_exit_code(statuses))
+        responses = plan.delete()
+        exit(stack_status_exit_code(responses.values()))
