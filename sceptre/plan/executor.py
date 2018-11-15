@@ -39,8 +39,14 @@ def stack_dependency_resolution(stacks):
     }
 
     stack_order = StackDependencyGraph(all_dependencies).as_dict().keys()
+    ordered_stacks = []
+    for stack_name in stack_order:
+        stack = next(
+            (stack for stack in stacks if stack.name == stack_name),
+            None
+        )
 
-    return [
-        next(stack for stack in stacks if stack.name == stack_name)
-        for stack_name in stack_order
-    ]
+        if stack:
+            ordered_stacks.append(stack)
+
+    return ordered_stacks
