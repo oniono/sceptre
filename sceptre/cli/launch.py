@@ -29,11 +29,6 @@ def launch_command(ctx, path, yes):
 
     plan = SceptrePlan(context)
 
-    if len(plan.stack_group.stacks) == 1:
-        confirmation(plan.launch.__name__, yes, stack=path)
-        plan.launch()
-        exit(stack_status_exit_code(plan))
-    else:
-        confirmation(plan.launch.__name__, yes, stack_group=path)
-        plan.launch()
-        exit(stack_status_exit_code(plan))
+    confirmation(plan.launch.__name__, yes, command_path=path)
+    statuses = [response[1] for response in plan.launch()]
+    exit(stack_status_exit_code(statuses))

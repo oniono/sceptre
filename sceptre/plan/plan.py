@@ -6,13 +6,7 @@ This module implements a SceptrePlanExecutor, which is responsible for
 executing the command specified in a SceptrePlan.
 """
 
-import fnmatch
-import jinja2
-import yaml
-from os import environ, path, walk
-
-from sceptre.config.graph import StackDependencyGraph
-from sceptre.stack_group import StackGroup
+from sceptre.config.graph import StackGraph
 from sceptre.config.reader import ConfigReader
 from sceptre.plan.executor import SceptrePlanExecutor
 
@@ -21,14 +15,18 @@ class SceptrePlan(object):
 
     def __init__(self, context):
         self.context = context
-        self.stack_group = self._generate_stack_group()
         self.responses = []
-        self.dependencies = StackDependencyGraph(self._generate_dependencies())
+
+        config_reader = ConfigReader(context)
+        stacks = config_reader.construct_stacks()
+        self.graph = StackGraph(stacks)
         self.launch_order = self._generate_launch_order()
 
-    def _execute(self, *args):
-        executor = SceptrePlanExecutor(self)
-        executor.execute(*args)
+    def _execute(self, *args, reverse=False):
+        launch_order = (list(reversed(self.launch_order))
+                        if reverse else self.launch_order)
+        executor = SceptrePlanExecutor(self.command, launch_order)
+        return executor.execute(*args)
 
     def _resolve(self, command=None):
         if command:
@@ -37,99 +35,18 @@ class SceptrePlan(object):
             raise TypeError(
                 "Command passed to plan.resolve() must have a value")
 
-    def _generate_stack_group(self):
-        """
-        Parses the path to generate relevant Stack Group and Stack object.
-
-        :returns: return StackGroup
-        :rtype: StackGroup
-        """
-        config_reader = ConfigReader(self.context)
-
-        if path.splitext(self.context.command_path)[1]:
-            stack_group = StackGroup(self.context.command_path)
-            stack = config_reader.construct_stack(self.context.command_path)
-            stack_group.stacks.append(stack)
-            return stack_group
-        else:
-            stack_group = config_reader.construct_stack_group(
-                self.context.command_path)
-            return stack_group
-
-    def _generate_dependencies(self):
-        final_deps = {}
-        templating_vars = {}
-        stack_group = self.stack_group
-        import ipdb
-        ipdb.set_trace()
-
-        def recurse_deps(stack_group):
-            stack_group = stack_group
-            root = path.join(self.context.full_config_path(), stack_group.path)
-
-            for directory_name, sub_directories, files in walk(root):
-                for filename in fnmatch.filter(files, '*.yaml'):
-                    if not filename.startswith("config"):
-                        def get_dependencies(config_path):
-                            abs_directory_path = path.abspath(directory_name)
-                            if path.isfile(path.join(abs_directory_path, filename)):
-                                stack_group = jinja2.Environment(
-                                    loader=jinja2.FileSystemLoader(
-                                        abs_directory_path),
-                                    undefined=jinja2.StrictUndefined
-                                )
-
-                                template = stack_group.get_template(filename)
-                                rendered_template = template.render(
-                                    environment_variable=environ,
-                                    stack_group_path=config_path,
-                                    **templating_vars
-                                )
-
-                                config = yaml.safe_load(rendered_template)
-                                return config.get("dependencies", [])
-
-                        dependencies = get_dependencies(directory_name)
-                        stack_list = []
-                        for d in dependencies:
-                            cr = ConfigReader(self.context)
-                            stack = cr.construct_stack(d)
-                            stack_list.append(stack)
-
-                        config_reader = ConfigReader(self.context)
-                        stack = config_reader.construct_stack(
-                            self._get_stack_group_name(
-                                directory_name) + '/' + filename
-                        )
-
-                        final_deps.update({stack: stack_list})
-
-                        for d in dependencies:
-                            config_reader = ConfigReader(self.context)
-                            sg = config_reader.construct_stack_group(
-                                path.split(d)[0])
-                            recurse_deps(sg)
-
-        recurse_deps(stack_group)
-        return final_deps
-
-    def _get_stack_group_name(self, abs_path):
-        temp_path = abs_path
-        final_path = ""
-
-        while path.split(temp_path)[1] != 'config':
-            final_path = path.join(path.split(temp_path)[1], final_path)
-            temp_path = path.split(temp_path)[0]
-
-        return final_path[:-1]  # remove trailing slash
-
     def _generate_launch_order(self):
-        launch_order = [self.dependencies.longest_path()]
-        # For each node with no incoming edges
-        # Generate the longest path from that node
-        # Add that longest path as a list into launch_order[]
-        # if node has no incoming or outgoing edges add to a "singles" list
-        # once complete append singles list to launch_order[]
+        launch_order = []
+        while self.graph.graph:
+            batch = set()
+            for stack in self.graph:
+                if self.graph.count_dependencies(stack) == 0:
+                    batch.add(stack)
+            launch_order.append(batch)
+
+            for stack in batch:
+                self.graph.remove_stack(stack)
+
         return launch_order
 
     def template(self, *args):
@@ -140,7 +57,7 @@ class SceptrePlan(object):
         :rtype: str
         """
         self._resolve(command=self.template.__name__)
-        self._execute(*args)
+        return self._execute(*args)
 
     def create(self, *args):
         """
@@ -150,7 +67,7 @@ class SceptrePlan(object):
         :rtype: sceptre.stack_status.StackStatus
         """
         self._resolve(command=self.create.__name__)
-        self._execute(*args)
+        return self._execute(*args)
 
     def update(self, *args):
         """
@@ -160,7 +77,7 @@ class SceptrePlan(object):
         :rtype: sceptre.stack_status.StackStatus
         """
         self._resolve(command=self.update.__name__)
-        self._execute(*args)
+        return self._execute(*args)
 
     def cancel_stack_update(self, *args):
         """
@@ -170,7 +87,7 @@ class SceptrePlan(object):
         :rtype: sceptre.stack_status.StackStatus
         """
         self._resolve(command=self.cancel_stack_update.__name__)
-        self._execute(*args)
+        return self._execute(*args)
 
     def launch(self, *args):
         """
@@ -185,7 +102,7 @@ class SceptrePlan(object):
         :rtype: sceptre.stack_status.StackStatus
         """
         self._resolve(command=self.launch.__name__)
-        self._execute(*args)
+        return self._execute(*args)
 
     def delete(self, *args):
         """
@@ -195,21 +112,21 @@ class SceptrePlan(object):
         :rtype: sceptre.stack_status.StackStatus
         """
         self._resolve(command=self.delete.__name__)
-        self._execute(*args)
+        return self._execute(*args, reverse=True)
 
     def lock(self, *args):
         """
         Locks the stack by applying a deny all updates stack policy.
         """
         self._resolve(command=self.lock.__name__)
-        self._execute(*args)
+        return self._execute(*args)
 
     def unlock(self, *args):
         """
         Unlocks the stack by applying an allow all updates stack policy.
         """
         self._resolve(command=self.unlock.__name__)
-        self._execute(*args)
+        return self._execute(*args)
 
     def describe(self, *args):
         """
@@ -219,7 +136,7 @@ class SceptrePlan(object):
         :rtype: dict
         """
         self._resolve(command=self.describe.__name__)
-        self._execute(*args)
+        return self._execute(*args)
 
     def describe_events(self, *args):
         """
@@ -229,7 +146,7 @@ class SceptrePlan(object):
         :rtype: dict
         """
         self._resolve(command=self.describe_events.__name__)
-        self._execute(*args)
+        return self._execute(*args)
 
     def describe_resources(self, *args):
         """
@@ -239,7 +156,7 @@ class SceptrePlan(object):
         :rtype: dict
         """
         self._resolve(command=self.describe_resources.__name__)
-        self._execute(*args)
+        return self._execute(*args)
 
     def describe_outputs(self, *args):
         """
@@ -249,7 +166,7 @@ class SceptrePlan(object):
         :rtype: list
         """
         self._resolve(command=self.describe_outputs.__name__)
-        self._execute(*args)
+        return self._execute(*args)
 
     def continue_update_rollback(self, *args):
         """
@@ -257,7 +174,7 @@ class SceptrePlan(object):
         UPDATE_ROLLBACK_COMPLETE.
        """
         self._resolve(command=self.continue_update_rollback.__name__)
-        self._execute(*args)
+        return self._execute(*args)
 
     def set_policy(self, *args):
         """
@@ -267,7 +184,7 @@ class SceptrePlan(object):
         :type policy_path: str
         """
         self._resolve(command=self.set_policy.__name__)
-        self._execute(*args)
+        return self._execute(*args)
 
     def get_policy(self, *args):
         """
@@ -277,7 +194,7 @@ class SceptrePlan(object):
         :rtype: str
         """
         self._resolve(command=self.get_policy.__name__)
-        self._execute(*args)
+        return self._execute(*args)
 
     def create_change_set(self, *args):
         """
@@ -287,7 +204,7 @@ class SceptrePlan(object):
         :type change_set_name: str
         """
         self._resolve(command=self.create_change_set.__name__)
-        self._execute(*args)
+        return self._execute(*args)
 
     def delete_change_set(self, *args):
         """
@@ -297,7 +214,7 @@ class SceptrePlan(object):
         :type change_set_name: str
         """
         self._resolve(command=self.delete_change_set.__name__)
-        self._execute(*args)
+        return self._execute(*args)
 
     def describe_change_set(self, *args):
         """
@@ -309,7 +226,7 @@ class SceptrePlan(object):
         :rtype: dict
         """
         self._resolve(command=self.describe_change_set.__name__)
-        self._execute(*args)
+        return self._execute(*args)
 
     def execute_change_set(self, *args):
         """
@@ -319,7 +236,7 @@ class SceptrePlan(object):
         :type change_set_name: str
         """
         self._resolve(command=self.execute_change_set.__name__)
-        self._execute(*args)
+        return self._execute(*args)
 
     def list_change_sets(self, *args):
         """
@@ -329,7 +246,7 @@ class SceptrePlan(object):
         :rtype: dict
         """
         self._resolve(command=self.list_change_sets.__name__)
-        self._execute(*args)
+        return self._execute(*args)
 
     def get_status(self, *args):
         """
@@ -340,7 +257,7 @@ class SceptrePlan(object):
         :raises: sceptre.exceptions.StackDoesNotExistError
         """
         self._resolve(command=self.get_status.__name__)
-        self._execute(*args)
+        return self._execute(*args)
 
     def wait_for_cs_completion(self, *args):
         """
@@ -352,7 +269,7 @@ class SceptrePlan(object):
         :rtype: sceptre.stack_status.StackChangeSetStatus
         """
         self._resolve(command=self.wait_for_cs_completion.__name__)
-        self._execute(*args)
+        return self._execute(*args)
 
     def validate(self, *args):
         """
@@ -365,7 +282,7 @@ class SceptrePlan(object):
         :raises: botocore.exceptions.ClientError
         """
         self._resolve(command=self.validate.__name__)
-        self._execute(*args)
+        return self._execute(*args)
 
     def estimate_cost(self, *args):
         """
@@ -376,11 +293,11 @@ class SceptrePlan(object):
         :raises: botocore.exceptions.ClientError
         """
         self._resolve(command=self.estimate_cost.__name__)
-        self._execute(*args)
+        return self._execute(*args)
 
     def generate(self, *args):
         """
         Returns a generated template for a given Stack
         """
         self._resolve(command=self.generate.__name__)
-        self._execute(*args)
+        return self._execute(*args)

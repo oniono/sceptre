@@ -3,7 +3,7 @@ import click
 from sceptre.context import SceptreContext
 from sceptre.cli.helpers import (
      catch_exceptions,
-     write
+     write_responses
     )
 from sceptre.plan.plan import SceptrePlan
 
@@ -29,11 +29,5 @@ def status_command(ctx, path):
             )
 
     plan = SceptrePlan(context)
-
-    if len(plan.stack_group.stacks) == 1:
-        plan.get_status()
-        write(plan.responses[0], no_colour=context.no_colour)
-    else:
-        plan.describe()
-        write(plan.responses, output_format=context.output_format,
-              no_colour=context.no_colour)
+    responses = plan.get_status()
+    write_responses(responses, no_colour=context.no_colour)

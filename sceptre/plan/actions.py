@@ -160,7 +160,7 @@ class StackActions(object):
         self._protect_execution()
         self.logger.info("%s - Launching stack", self.stack.name)
         try:
-            existing_status = self.get_status()
+            existing_status = self._get_status()
         except StackDoesNotExistError:
             existing_status = "PENDING"
 
@@ -216,7 +216,7 @@ class StackActions(object):
         self._protect_execution()
         self.logger.info("%s - Deleting stack", self.stack.name)
         try:
-            status = self.get_status()
+            status = self._get_status()
         except StackDoesNotExistError:
             self.logger.info("%s does not exist.", self.stack.name)
             status = StackStatus.COMPLETE
@@ -572,16 +572,11 @@ class StackActions(object):
 
         :returns: The stack's status.
         :rtype: sceptre.stack_status.StackStatus
-        :raises: sceptre.exceptions.StackDoesNotExistError
         """
         try:
-            status = self.describe()["Stacks"][0]["StackStatus"]
-        except botocore.exceptions.ClientError as exp:
-            if exp.response["Error"]["Message"].endswith("does not exist"):
-                raise StackDoesNotExistError(exp.response["Error"]["Message"])
-            else:
-                raise exp
-        return status
+            return self._get_status()
+        except StackDoesNotExistError:
+            return "PENDING"
 
     def _format_parameters(self, parameters):
         """
@@ -671,11 +666,21 @@ class StackActions(object):
         )
         elapsed = 0
         while status == StackStatus.IN_PROGRESS and not timed_out(elapsed):
-            status = self._get_simplified_status(self.get_status())
+            status = self._get_simplified_status(self._get_status())
             self._log_new_events()
             time.sleep(4)
             elapsed += 4
 
+        return status
+
+    def _get_status(self):
+        try:
+            status = self.describe()["Stacks"][0]["StackStatus"]
+        except botocore.exceptions.ClientError as exp:
+            if exp.response["Error"]["Message"].endswith("does not exist"):
+                raise StackDoesNotExistError(exp.response["Error"]["Message"])
+            else:
+                raise exp
         return status
 
     @staticmethod

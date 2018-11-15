@@ -6,7 +6,6 @@ This module implements a SceptrePlanExecutor, which is responsible for
 executing the command specified in a SceptrePlan.
 """
 import logging
-import threading
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from sceptre.plan.actions import StackActions
@@ -15,93 +14,45 @@ from sceptre.stack_status import StackStatus
 
 class SceptrePlanExecutor(object):
 
-    def __init__(self, plan):
+    def __init__(self, command, launch_order):
         self.logger = logging.getLogger(__name__)
-        self.plan = plan
-        self.num_threads = len(self.plan.launch_order)
-        self.threading_events = self._get_threading_events()
-        self.stack_statuses = self._get_initial_statuses()
+        self.command = command
+        self.launch_order = launch_order
+
+        self.num_threads = len(max(launch_order, key=len))
+        self.stack_statuses = {stack: StackStatus.PENDING
+                               for batch in launch_order for stack in batch}
 
     def execute(self, *args):
+        responses = []
+
         with ThreadPoolExecutor(max_workers=self.num_threads) as executor:
-            futures = [
-                executor.submit(
-                    self.serial_executor,
-                    stacks,
-                    *args
-                )
-                for stacks in self.plan.launch_order
-            ]
-            for future in as_completed(futures):
-                response = future.result()
-                if response:
-                    self.plan.responses.update(response)
+            for batch in self.launch_order:
+                futures = [executor.submit(self._execute, stack, *args)
+                           for stack in batch]
 
-    def serial_executor(self, stacks, *args):
-        import ipdb
-        ipdb.set_trace()
-        for stack in stacks:
-            if stack is not None:
-                response = getattr(StackActions(stack), self.plan.command)
-                self.plan.responses.append(response)
-        # try:
-        #     for stack in stacks:
-        #         if stack in self.threading_events:
-        #             self.threading_events[stack].wait()
-        #             if self.stack_statuses[stack] != StackStatus.COMPLETE:
-        #                 self.stack_statuses[stack.name] = StackStatus.FAILED
+                failed = False
+                for future in as_completed(futures):
+                    stack, status = future.result()
+                    responses.append((stack, status))
 
-        #     if self.stack_statuses[stack.name] != StackStatus.FAILED:
-        #         try:
-        #             response = getattr(
-        #                 StackActions(stack),
-        #                 self.plan.command
-        #             )(*args)
-        #             self.stack_statuses[stack.name] = response
-        #             self.plan.responses.append(response)
-        #         except Exception:
-        #             self.stack_statuses[stack.name] = StackStatus.FAILED
+                    if status == StackStatus.FAILED:
+                        failed = True
 
-        #     self.threading_events[stack.name].set()
-        # except Exception as e:
-        #     print(e)
-        #     traceback.print_exc()
+                if failed:
+                    break
 
-    def _get_threading_events(self):
-        """
-        Returns a threading.Event() for each stack in every sub-stack.
+        return responses
 
-        :returns: A threading.Event object for each stack, keyed by the
-            stack's name.
-        :rtype: dict
-        """
-        stacks = []
-        for exec_list in self.plan.launch_order:
-            for stack in exec_list:
-                stacks.append(stack)
+    def _execute(self, stack, *args):
+        try:
+            actions = StackActions(stack)
+            status = getattr(actions, self.command)(*args)
+        except:
+            self.stack_statuses[stack] = StackStatus.FAILED
+            self.logger.exception("Stack %s failed to %s", stack.name,
+                                  self.command)
+        else:
+            self.stack_statuses[stack] = status
 
-        events = {
-            stack: threading.Event()
-            for stack in stacks
-        }
-        self.logger.debug(events)
-        return events
-
-    def _get_initial_statuses(self):
-        """
-        Returns a "pending" sceptre.stack_status.StackStatus for each stack
-        in every sub-stack.
-
-        :returns: A "pending" stack status for each stack, keyed by the
-            stack's name.
-        :rtype: dict
-        """
-        stacks = []
-        for exec_list in self.plan.launch_order:
-            for stack in exec_list:
-                stacks.append(stack)
-
-        return {
-            stack: StackStatus.PENDING
-            for stack in stacks
-        }
+        return stack, self.stack_statuses[stack]
